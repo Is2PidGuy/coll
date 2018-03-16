@@ -15,8 +15,20 @@ class Rect {
     constructor(a, b, c, d) {
         this.points = [a, b, c, d];
         this.vel = { x: 0, y: 0 };
+        this.angularVel = 0.02;
     }
 }
+
+const rotate = (a, pivot, angle) => {
+    const dx = a.x - pivot.x;
+    const dy = a.y - pivot.y;
+    const x = dx * Math.cos(angle) - dy * Math.sin(angle);
+    const y = dx * Math.sin(angle) + dy * Math.cos(angle);
+    return {
+        x: pivot.x + x,
+        y: pivot.y + y,
+    };
+};
 
 const drawLine = (a, b, color = 'black', width = 1) => {
     ctx.beginPath();
@@ -94,6 +106,19 @@ document.addEventListener('mousedown', e => {
     ref.push({ x: e.pageX, y: e.pageY });
 });
 
+const centroid = (points) => {
+    let x = 0;
+    let y = 0;
+    points.forEach(d => {
+        x += d.x;
+        y += d.y;
+    });
+    return {
+        x: x / points.length,
+        y: y / points.length,
+    };
+};
+
 setInterval(
     () => {
         if (keys['ArrowLeft']) {
@@ -108,6 +133,13 @@ setInterval(
         if (keys['ArrowDown']) {
             rc.vel.y += 0.2;
         }
+        const center = centroid(rc.points);
+        rc.angularVel *= 0.99;
+        const rotation = rc.angularVel;
+        rc.points = rc.points.map(d => {
+            return rotate(d, center, rotation);
+        });
+
         rc.vel.x *= 0.99;
         rc.vel.y *= 0.99;
         rc.points.forEach(d => {
@@ -148,6 +180,7 @@ setInterval(
                 const norm = rc.vel.x * normal.x + rc.vel.y * normal.y;
                 rc.vel.x -= 1.5 * norm * normal.x;
                 rc.vel.y -= 1.5 * norm * normal.y;
+                rc.angularVel = -0.05 + Math.random() * 0.05;
             }
         });
 
