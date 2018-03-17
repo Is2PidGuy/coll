@@ -1,5 +1,6 @@
 
 import keys from './keys';
+import Rect from './shape';
 
 import './styles.css';
 
@@ -10,13 +11,6 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 canvas.width = w;
 canvas.height = h;
-
-class Rect {
-    constructor(a, b, c, d) {
-        this.points = [a, b, c, d];
-        this.vel = { x: 0, y: 0 };
-    }
-}
 
 const drawLine = (a, b, color = 'black', width = 1) => {
     ctx.beginPath();
@@ -94,6 +88,78 @@ document.addEventListener('mousedown', e => {
     ref.push({ x: e.pageX, y: e.pageY });
 });
 
+const centroid = (points) => {
+    let x = 0;
+    let y = 0;
+    points.forEach(d => {
+        x += d.x;
+        y += d.y;
+    });
+    return {
+        x: x / points.length,
+        y: y / points.length,
+    };
+};
+
+const distance = (p1, p2) => {
+    return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+};
+
+const sub = (p1, p2) => {
+    return { x: p2.x - p1.x, y: p2.y - p1.y };
+};
+
+const dot = (p1, p2) => {
+    return p1.x * p2.x + p1.y * p2.y;
+};
+
+const normalize = (p) => {
+    let h = Math.hypot(p.x, p.y);
+    if (h === 0) h = 1;
+    return { x: p.x / h, y: p.y / h }
+};
+
+const perpendicular = (p1, p2, p) => {
+    const dist = distance(p1, p2);
+    let v = sub(p1, p2);
+    v = { x: v.x / dist, y: v.y / dist };
+    let normal = { x: v.y, y: -v.x };
+    const l = sub(p1, p);
+    // if (dot(normal, l) < 0) {
+    //     normal = { x: -normal.x, y: -normal.y };
+    // }
+    const dist2 = Math.abs(dot(l, normal)); 
+    const proj = dot(v, l);
+    const point = { x: proj * v.x + p1.x, y: proj * v.y + p1.y };
+    return {
+        distance: dist2,
+        point,
+        outOfBounds: proj < 0 || proj > dist,
+    };
+};
+
+const getDistance = (p1, p2, pt) => {
+    let mind = distance(p1, pt);
+    let np = p1;
+    let d = distance(p2, pt);
+    if (d < mind) {
+        mind = d;
+        np = p2;
+    }
+    d = perpendicular(p1, p2, pt);
+    if (!d.outOfBounds && d.distance < mind) {
+        mind = d.distance;
+        np = d.point;
+    }
+    return { 
+        distance: mind, 
+        line: {
+            p1: np,
+            p2: pt,
+        },
+    };
+};
+
 setInterval(
     () => {
         if (keys['ArrowLeft']) {
@@ -110,6 +176,7 @@ setInterval(
         }
         rc.vel.x *= 0.99;
         rc.vel.y *= 0.99;
+        const oldRc = rc.points.map(d => ({ x: d.x, y: d.y }));
         rc.points.forEach(d => {
             d.x += rc.vel.x;
             d.y += rc.vel.y;
@@ -117,6 +184,8 @@ setInterval(
 
         let intt = 1.5;
         let line;
+        let dx = rc.vel.x;
+        let dy = rc.vel.y;
         const sides = [sideA, sideB].forEach(side => {
             if (line) return;
             for (let i = 1; i < side.length; i += 1) {
@@ -125,7 +194,7 @@ setInterval(
                 rc.points.forEach(p => {
                     const oldp = { x: p.x - rc.vel.x, y: p.y - rc.vel.y };
                     const i = intersect(oldp, p, p1, p2);
-                    if (i >= -0.05 && i <= 1.005) {
+                    if (i > 0 && i < 1) {
                         if (i < intt) {
                             intt = i;
                             line = { p1, p2 };
@@ -134,22 +203,90 @@ setInterval(
                 });
             }
 
-            if (line) {
-                rc.points.forEach(p => {
-                    p.x -= (1 - intt + 0.1) * rc.vel.x;
-                    p.y -= (1 - intt + 0.1) * rc.vel.y;
-                });
-                let normal = { x: line.p1.x - line.p2.x, y: line.p1.y - line.p2.y };
-                const mag = Math.hypot(normal.x, normal.y);
-                normal.x /= mag;
-                normal.y /= mag;
-                normal = { x: -normal.y, y: normal.x };
+            if (!line) return;
 
-                const norm = rc.vel.x * normal.x + rc.vel.y * normal.y;
+            const Dx = (1 - intt + 0.1) * dx;
+            const Dy = (1 - intt + 0.1) * dy;
+            dx -= Dx;
+            dy -= Dy;
+            rc.points.forEach(p => {
+                p.x -= Dx;
+                p.y -= Dy;
+            });
+        });
+
+        let low = 0, high = 1;
+        let lastLine;
+        while (high - low > 0.0005) {
+            const mid = (low + high) / 2;
+            let ints = false;
+            rc.points.forEach(p => {
+                p.x -= dx - mid * dx;
+                p.y -= dy - mid * dy;
+            });
+            [sideA, sideB].forEach(side => {
+                if (ints) return;
+                for (let i = 1; i < side.length; i += 1) {
+                    const p1 = side[i - 1];
+                    const p2 = side[i];
+                    for (let j = 0; j < rc.points.length; j += 1) {
+                        if (ints) return;
+                        const a = rc.points[j];
+                        const b = rc.points[(j + 1) % rc.points.length];
+                        const i = intersect(a, b, p1, p2);
+                        if (i > 0 && i < 1) {
+                            ints = true;
+                            lastLine = { p1, p2 };
+                        }
+                        if (ints) break;
+                    }
+                }
+            });
+            if (ints) {
+                high = mid;
+            } else {
+                low = mid;
+            }
+            rc.points.forEach(p => {
+                p.x += (1 - mid) * dx;
+                p.y += (1 - mid) * dy;
+            });
+        }
+
+        if (high < 1) {
+            rc.points.forEach(p => {
+                p.x -= dx - low * dx;
+                p.y -= dy - low * dy;
+            });
+        }
+        let axis;
+        if (line || lastLine) {
+            const ln = lastLine ? lastLine : line;
+            let d = oldRc.map(d => {
+                return getDistance(ln.p1, ln.p2, d);
+            });
+            oldRc.forEach((p, i) => {
+                const L = d.length;
+                d.push(getDistance(p, oldRc[(i + 1) % oldRc.length], ln.p1));
+                d.push(getDistance(p, oldRc[(i + 1) % oldRc.length], ln.p2));
+                d[L].line = { p1: d[L].line.p2, p2: d[L].line.p1 };
+                d[L + 1].line = { p1: d[L + 1].line.p2, p2: d[L + 1].line.p1 };
+            });
+            const mind = Math.min(...d.map(d => d.distance));
+            const ch = d.filter(d => d.distance === mind);
+            const filt = ch[0];
+            axis = filt;
+            const normal = normalize(sub(filt.line.p1, filt.line.p2));
+
+            let norm = dot(rc.vel, normal);
+            if (norm > 0) {
+                console.log('ehll');
+            }
+            if (norm < 0) {
                 rc.vel.x -= 1.5 * norm * normal.x;
                 rc.vel.y -= 1.5 * norm * normal.y;
             }
-        });
+        }
 
         // render
         ctx.fillStyle = 'white';
@@ -161,9 +298,6 @@ setInterval(
             drawLine(sideB[i - 1], sideB[i], 'green', 3);
         }
         drawRect(rc, 'black');
-        if (line) {
-            drawLine(line.p1, line.p2, 'red', 8);
-        }
     },
     20,
 );
