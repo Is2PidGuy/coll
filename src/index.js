@@ -277,8 +277,13 @@ setInterval(
             const filt = ch[0];
             axis = filt;
             const normal = normalize(sub(filt.line.p1, filt.line.p2));
-
+            const tangent = { x: normal.y, y: -normal.x };
             let norm = dot(rc.vel, normal);
+            const dt = dot(rc.vel, tangent);
+            rc.points.forEach(d => {
+                d.x += dt * tangent.x;
+                d.y += dt * tangent.y;
+            });
             if (norm > 0) {
                 console.log('ehll');
             }
